@@ -34,7 +34,7 @@ export default {
     function insertTodo(todo) {
       todo.length >= 3
         ? (function(todo) {
-            const positionValue = getStorageLength(KEYAPP, "list") + 1;
+            const positionValue = getStorageLength(KEYAPP, "list");
             insertStorage(KEYAPP, "list", {
               value: todo,
               checked: 0,

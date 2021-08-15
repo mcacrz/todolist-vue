@@ -5,11 +5,13 @@ import { library } from '@fortawesome/fontawesome-svg-core'
 import { faTimes, faSortUp, faSortDown } from '@fortawesome/free-solid-svg-icons'
 import {faTrashAlt} from '@fortawesome/free-regular-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import draggable from 'vuedraggable/src/vuedraggable'
 
 export default {
   name:'TodoList',
   components:{
-    'font-awesome-icon':FontAwesomeIcon
+    'font-awesome-icon':FontAwesomeIcon,
+    draggable
   },
   setup() {
     const KEYAPP = inject('KEYAPP');
@@ -19,8 +21,9 @@ export default {
     library.add([faTimes,faTrashAlt,faSortUp,faSortDown]);
     
     function deleteTodo(id) {
+      const todoDeleted = selectStorage(KEYAPP,'list',null,['id|===|'+id])
       deleteStorage(KEYAPP,'list', id)
-      orderPosition()
+      orderPosition(todoDeleted.position)
       todoList.value = selectStorage(KEYAPP,'list') 
     }
 
@@ -30,6 +33,14 @@ export default {
       }
 
       todoList.value = selectStorage(KEYAPP,'list',null,null,['position|asc'])
+    }
+
+    function changeEvent(event){
+      updatePosition(
+        event.moved.element.id,
+        event.moved.oldIndex,
+        event.moved.newIndex
+      )
     }
 
     function updateTodo(event) {
@@ -43,70 +54,71 @@ export default {
       todoList.value = selectStorage(KEYAPP,'list',null,null,['position|asc'])
     }
 
-    function upPosition(id) {
-      const todo = selectStorage(KEYAPP,'list',null,['id|===|'+id])
-      
-      if(todo.position > 1){
-        const todoAhead = selectStorage(KEYAPP, 'list',null,['position|<|'+todo.position],['position|desc'])[0]
-        if(todoAhead !== null && todoAhead !== undefined){
-          updateStorage(KEYAPP, 'list', todoAhead.id, {position:++todoAhead.position})
-          updateStorage(KEYAPP, 'list', todo.id, {position:--todo.position})
-          todoList.value = selectStorage(KEYAPP,'list',null,null,['position|asc'])
-        }
+    function updatePosition(id, oldIndex, newIndex) {
+      const allTodos = selectStorage(KEYAPP,'list')
+
+      if(oldIndex > newIndex){
+        allTodos.forEach(function(item){
+          if(item.position >= newIndex && item.position < oldIndex){
+            updateStorage(KEYAPP, 'list', item.id,{position:++item.position})
+          }
+        })
+
+        updateStorage(KEYAPP,'list', id, {position:newIndex})
+        return true
       }
-    }
 
-    function downPosition(id) {
-      const todo = selectStorage(KEYAPP,'list', null, ['id|===|'+id])
-      const storageList = selectStorage(KEYAPP,'list')
-
-      if(todo.position < storageList.length)
-      {
-        const todoAhead = selectStorage(KEYAPP, 'list',null,['position|>|'+todo.position],['position|asc'])[0]
-        if(todoAhead !== null && todoAhead !== undefined){
-          updateStorage(KEYAPP, 'list', todoAhead.id, {position:--todoAhead.position})
-          updateStorage(KEYAPP, 'list', todo.id, {position:++todo.position})
-          todoList.value = selectStorage(KEYAPP,'list',null,null,['position|asc'])
+      allTodos.forEach(function(item){
+        if(item.position > oldIndex && item.position <= newIndex){
+          updateStorage(KEYAPP, 'list', item.id, {position:--item.position})
         }
-      }
-    }
-
-    function orderPosition() {
-      const storageList = selectStorage(KEYAPP,'list',null,null,['position|asc'])
-      const result = storageList.map((item, index) => {
-        item.position = ++index
-        return item
       })
 
-      localStorage.setItem(KEYAPP+'/'+'list', JSON.stringify(result))
+      updateStorage(KEYAPP, 'list', id, {position:newIndex})
+      return true
+    }
+
+    function orderPosition(position) {
+      const allTodos = selectStorage(KEYAPP,'list')
+
+      allTodos.forEach(function(item){
+        if(parseInt(item.position) > parseInt(position)){
+          updateStorage(KEYAPP,'list',item.id,{position:--item.position})
+        }
+      })
     }
 
     onMounted(() => loadTodoList())
     watchEffect(() => todoList.value = todoInserted.value)
 
     return {
+      changeEvent,
       deleteTodo,
       updateTodo,
-      upPosition,
-      downPosition,
-      todoList
+      updatePosition,
+      todoList,
+      drag:false
     }
   },
 }
 </script>
 
 <template>
-  <div>
-    <ul class="shadow-xl bg-white p-2 rounded-md flex-row">
-      <li v-for="todo in todoList" :key="todo.id" class="mb-4 border-solid border-b-2 border-gray-200">
-        <a href="" class="float-left mr-3 -mt-1 p-0.5" @click="() => deleteTodo(todo.id)"><font-awesome-icon :icon="['far', 'trash-alt']" size="md" /></a>
-        <input type="checkbox" class="mr-3 rounded-md box-border h-4 w-4" :value="todo.id" @change="updateTodo" :checked="todo.checked == 1 ? true : false">
-        <span :class="todo.checked == 1 ? 'text-gray-400 line-through' : 'text-black'+' align-baseline'" v-html="todo.value"></span>
-        <div class="float-right -mt-2">
-          <a class="overflow-hidden block" href="" @click="() => upPosition(todo.id)"><font-awesome-icon icon="sort-up" size="lg"/></a>
-          <a class="overflow-hidden block -mt-4" href="" @click="() => downPosition(todo.id)"><font-awesome-icon icon="sort-down" size="lg" /></a>
-        </div>
-      </li>
-    </ul>
-  </div>
+  <draggable
+    v-model="todoList"
+    group="todos"
+    @start="drag=true" 
+    @end="drag=false"
+    @change="changeEvent"
+    item-key="id"
+    class="shadow-xl bg-white px-2 pt-3 pb-1 rounded-md flex-row" 
+  >
+    <template #item="{element}">
+      <div class="mb-2 p-0.5 border-solid border-2 border-gray-200">
+        <a href="" class="float-left mr-3 -mt-1 p-0.5" @click="() => deleteTodo(element.id)"><font-awesome-icon :icon="['far', 'trash-alt']" size="1x" /></a>
+        <input type="checkbox" class="mr-3 rounded-md box-border h-4 w-4" :value="element.id" @change="updateTodo" :checked="element.checked == 1 ? true : false">
+        <span :class="element.checked == 1 ? 'text-gray-400 line-through' : 'text-black'+' align-baseline'">{{element.value}}</span>
+      </div>
+    </template>
+  </draggable>
 </template>
